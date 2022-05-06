@@ -17,6 +17,20 @@ init()
 	level.currentMapName = getDvar("mapName");
 	level.timescaleDefault = 1.0;
 	setDvar("sv_cheats", "1");
+	if (level.console)
+	{
+		level.yAxis = 150;
+		level.yAxisMenuBorder = 163;
+		level.yAxisControlsBackground = -25;
+	}
+	else 
+	{
+		level.yAxis = 200;
+		level.yAxisMenuBorder = 200;
+		level.yAxisControlsBackground = 5;
+	}
+
+	level.xAxis = 0;
 
 	switch (level.currentGametype)
 	{
@@ -103,23 +117,9 @@ onPlayerSpawned()
 			{
 				self iPrintln(level.menuName + " loaded");
 				self iprintln("Open: [{+speed_throw}] + [{+actionslot 2}]");
-				self iprintln("Scroll: [{+actionslot 1}] / [{+actionslot 2}]");
-				self iprintln("Select: [{+gostand}]; Close: [{+melee}]");
 				self FreezeControls(false);
-				self thread testFunc();
 				self thread runController();
 				self buildMenu();
-			}
-
-			if (level.console)
-			{
-				self.yAxis = 150;
-				self.yAxisWeapons = 185;
-			}
-			else 
-			{
-				self.yAxis = 200;
-				self.yAxisWeapons = 200;
 			}
 			
 			firstSpawn = false;
@@ -230,43 +230,239 @@ buildMenu()
 	self addMenu("", m, level.menuName);
 	self addOption(m, "Godmode", ::toggleGodmode);
 	self addOption(m, "Refill Ammo", ::refillAmmo);
-	self addMenu(m, "MainSelf", "^9Self Options");
-	self addMenu(m, "MainTrick", "^9Editor stuff");
-	self addMenu(m, "MainClass", "^9Class Options");
-	self addMenu(m, "MainLobby", "^9Lobby Options");
+	self addMenu(m, "MainSelf", "^5Self Options");
+	self addMenu(m, "MainBot", "^5Bot Options");
+	self addMenu(m, "MainClass", "^5Class Options");
+	self addMenu(m, "MainLobby", "^5Lobby Options");
 
 	m = "MainSelf";
 	self addOption(m, "Suicide", ::doSuicide);
 	self addOption(m, "Third Person", ::ToggleThirdPerson);
 	self addOption(m, "Save Loadout", ::saveLoadout);
 	self addOption(m, "Delete saved loadout", ::deleteLoadout);
-
-	m = "MainTrick";
 	self addOption(m, "Toggle EB", ::toggleExplosiveBullets);
-	self addOption(m, "Change timescale", ::changeTimescale);
-	self addOption(m, "Change gravity", ::changeGravity);
 	self addOption(m, "Change EB range", ::changeEBRange);
 
-	m = "MainClass";
-	self addMenu(m, "ClassWeapon", "^9Weapon Selector");
-	self addMenu(m, "ClassGrenades", "^9Grenade Selector");
-	self addMenu(m, "ClassCamo", "^9Camo Selector");
-	self addMenu(m, "ClassPerk", "^9Perk Selector");
-	self addMenu(m ,"ClassAttachment", "^9Attachment Selector");
-	self addMenu(m, "ClassEquipment", "^9Equipment Selector");
-	self addMenu(m, "ClassTacticals", "^9Tacticals Selector");
-	self addMenu(m, "ClassKillstreaks", "^9Killstreak Menu");
+	m = "MainBot";
+	self addOption(m, "Add bot", ::addDummies);
+	self addOption(m, "Add max bots");
+	self addOption(m, "Freeze all bots");
+	self addOption(m, "Unfreeze all bots");
+	self addOption(m, "Kick all bots");
 
-	self thread buildWeaponMenu();
+	m = "MainClass";
+	self addMenu(m, "ClassWeapon", "^5Weapon Selector");
+	self addMenu(m, "ClassGrenades", "^5Grenade Selector");
+	self addMenu(m, "ClassCamo", "^5Camo Selector");
+	self addMenu(m, "ClassPerk", "^5Perk Selector");
+	self addMenu(m ,"ClassAttachment", "^5Attachment Selector");
+	self addMenu(m, "ClassEquipment", "^5Equipment Selector");
+	self addMenu(m, "ClassTacticals", "^5Tacticals Selector");
+	self addMenu(m, "ClassKillstreaks", "^5Killstreak Menu");
+
+	self BuildClassSubMenus();
+
+	m = "MainLobby";
+	self addOption(m, "Toggle timer", ::toggleTimer);
+	self addOption(m, "Add 1 minute", ::addMinuteToTimer);
+	self addOption(m, "Remove 1 minute", ::removeMinuteFromTimer);
+	self addOption(m, "Timescale Editor", ::initDvarEditor, "timescale");
+	self addOption(m, "Change timescale", ::changeTimescale);
+	self addOption(m, "Change gravity", ::changeGravity);
+
+	self addMenu("main", "MainPlayers", "^5Players Menu");
+	m = "MainPlayers";
+	if (!level.teamBased)
+	{
+		for (p = 0; p < level.players.size; p++)
+		{
+			player = level.players[p];
+			name = player.name;
+			player_name = "player_" + name;
+
+			if (isAlive(player))
+			{
+				self addMenu(m, player_name, name + " (Alive)");
+			}
+			else if (!isAlive(player))
+			{
+				self addMenu(m, player_name, name + " (Dead)");
+			}
+
+			self addOption(player_name, "Teleport player to crosshair", ::teleportToCrosshair, player);
+			self addOption(player_name, "Teleport myself to player", ::teleportSelfTo, player);
+			self addOption(player_name, "Kill Player", ::killPlayer, player);
+			self addOption(player_name, "Freeze Player", ::freezePlayer, player);
+			self addOption(player_name, "Kick Player", ::kickPlayer, player);
+			self addOption(player_name, "Remove Second Chance", ::removeSecondChance, player);
+			self addOption(player_name, "Change Outfit", ::initOutfitEditor, player);
+		}
+	}
+	else if (level.teamBased)
+	{
+		myTeam = self.pers["team"];
+		otherTeam = getOtherTeam(myTeam);
+		
+		self addMenu(m, "PlayerFriendly", "^5Friendly players");
+		self addMenu(m, "PlayerEnemy", "^5Enemy players");
+
+		for (p = 0; p < level.players.size; p++)
+		{
+			player = level.players[p];
+			name = player.name;
+			player_name = "player_" + name;
+
+			if (player.pers["team"] == myTeam)
+			{
+				m = "PlayerFriendly";
+
+				if (isAlive(player))
+				{
+					self addMenu(m, player_name, name + " (Alive)");
+				}
+				else if (!isAlive(player))
+				{
+					self addMenu(m, player_name, name + " (Dead)");
+				}
+			}
+			else if (player.pers["team"] == otherTeam)
+			{
+				m = "PlayerEnemy";
+
+				if (isAlive(player))
+				{
+					self addMenu(m, player_name, name + " (Alive)");
+				}
+				else if (!isAlive(player))
+				{
+					self addMenu(m, player_name, name + " (Dead)");
+				}
+			}
+			
+			self addOption(player_name, "Teleport player to crosshair", ::teleportToCrosshair, player);
+			self addOption(player_name, "Teleport myself to player", ::teleportSelfTo, player);
+			self addOption(player_name, "Kill Player", ::killPlayer, player);
+			self addOption(player_name, "Freeze Player", ::freezePlayer, player);
+			self addOption(player_name, "Revive player", ::revivePlayer, player);
+			self addOption(player_name, "Change Team", ::changePlayerTeam, player);
+			self addOption(player_name, "Remove Second Chance", ::removeSecondChance, player);
+			self addOption(player_name, "Kick Player", ::kickPlayer, player);
+			self addOption(player_name, "Change Outfit", ::initOutfitEditor, player);
+			self addOption(player_name, "Give Player current Weapon");
+		}
+	}
+}
+
+BuildClassSubMenus()
+{
+	m = "ClassWeapon";
+	self addMenu(m, "WeaponPrimary", "^5Primary");
+	self addMenu(m, "WeaponSecondary", "^5Secondary");
+	self addMenu(m, "WeaponDualWield", "^5Dual Wield");
+	self addMenu(m, "WeaponGlitch", "^5Glitch");
+	self addOption(m, "Take Weapon", ::takeUserWeapon);
+	self addOption(m, "Drop Weapon", ::dropUserWeapon);
 	
+	m = "WeaponPrimary";
+	self addMenu(m, "PrimarySMG", "^5SMG");
+	self addMenu(m, "PrimaryAssault", "^5Assault");
+	self addMenu(m, "PrimaryShotgun", "^5Shotgun");
+	self addMenu(m, "PrimaryLMG", "^5LMG");
+	self addMenu(m, "PrimarySniper", "^5Sniper");
+	
+	m = "PrimarySMG";
+	self addOption(m, "MP5K", ::giveUserWeapon, "mp5k_mp");
+	self addOption(m, "Skorpion", ::giveUserWeapon, "skorpion_mp");
+	self addOption(m, "MAC11", ::giveUserWeapon, "mac11_mp");
+	self addOption(m, "AK74u", ::giveUserWeapon, "ak74u_mp");
+	self addOption(m, "UZI", ::giveUserWeapon, "uzi_mp");
+	self addOption(m, "PM63", ::giveUserWeapon, "pm63_mp");
+	self addOption(m, "MPL", ::giveUserWeapon, "mpl_mp");
+	self addOption(m, "Spectre", ::giveUserWeapon, "spectre_mp");
+	self addOption(m, "Kiparis", ::giveUserWeapon, "kiparis_mp");
+	
+	m = "PrimaryAssault";
+	self addOption(m, "M16", ::giveUserWeapon, "m16_mp");
+	self addOption(m, "Enfield", ::giveUserWeapon, "enfield_mp");
+	self addOption(m, "M14", ::giveUserWeapon, "m14_mp");
+	self addOption(m, "Famas", ::giveUserWeapon, "famas_mp");
+	self addOption(m, "Galil", ::giveUserWeapon, "galil_mp");
+	self addOption(m, "AUG", ::giveUserWeapon, "aug_mp");
+	self addOption(m, "FN FAL", ::giveUserWeapon, "fnfal_mp");
+	self addOption(m, "AK47", ::giveUserWeapon, "ak47_mp");
+	self addOption(m, "Commando", ::giveUserWeapon, "commando_mp");
+	self addOption(m, "G11", ::giveUserWeapon, "g11_mp");
+	
+	m = "PrimaryShotgun";
+	self addOption(m, "Olympia", ::giveUserWeapon, "rottweil72_mp");
+	self addOption(m, "Stakeout", ::giveUserWeapon, "ithaca_grip_mp");
+	self addOption(m, "SPAS-12", ::giveUserWeapon, "spas_mp");
+	self addOption(m, "HS10", ::giveUserWeapon, "hs10_mp");
+	
+	m = "PrimaryLMG";
+	self addOption(m, "HK21", ::giveUserWeapon, "hk21_mp");
+	self addOption(m, "RPK", ::giveUserWeapon, "rpk_mp");
+	self addOption(m, "M60", ::giveUserWeapon, "m60_mp");
+	self addOption(m, "Stoner63", ::giveUserWeapon, "stoner63_mp");
+	
+	m = "PrimarySniper";
+	self addOption(m, "Dragunov", ::giveUserWeapon, "dragunov_mp");
+	self addOption(m, "WA2000", ::giveUserWeapon, "wa2000_mp");
+	self addOption(m, "L96A1", ::giveUserWeapon, "l96a1_mp");
+	self addOption(m, "PSG1", ::giveUserWeapon, "psg1_mp");
+	
+	m = "WeaponSecondary";
+	self addMenu(m, "SecondaryPistol", "^5Pistol");
+	self addMenu(m, "SecondaryLauncher", "^5Launcher");
+	self addMenu(m, "SecondarySpecial", "^5Special");
+	
+	m = "SecondaryPistol";
+	self addOption(m, "ASP", ::giveUserWeapon, "asp_mp");
+	self addOption(m, "M1911", ::giveUserWeapon, "m1911_mp");
+	self addOption(m, "Makarov", ::giveUserWeapon, "makarov_mp");
+	self addOption(m, "Python", ::giveUserWeapon, "python_mp");
+	self addOption(m, "CZ75", ::giveUserWeapon, "cz75_mp");
+	
+	m = "SecondaryLauncher";
+	self addOption(m, "M72 LAW", ::giveUserWeapon, "m72_law_mp");
+	self addOption(m, "RPG", ::giveUserWeapon, "rpg_mp");
+	self addOption(m, "Strela-3", ::giveUserWeapon, "strela_mp");
+	self addOption(m, "China Lake", ::giveUserWeapon, "china_lake_mp");
+	
+	m = "SecondarySpecial";
+	self addOption(m, "Ballistic Knife", ::giveUserWeapon, "knife_ballistic_mp");
+	self addOption(m, "Crossbow", ::giveUserWeapon, "crossbow_explosive_mp");
+	
+	m = "WeaponDualWield";
+	self addOption(m, "ASP", ::giveUserWeapon, "aspdw_mp");
+	self addOption(m, "Makarov", ::giveUserWeapon, "makarovdw_mp");
+	self addOption(m, "M1911", ::giveUserWeapon, "m1911dw_mp");
+	self addOption(m, "Python", ::giveUserWeapon, "pythondw_mp");
+	self addOption(m, "CZ75", ::giveUserWeapon, "cz75dw_mp");
+	self addOption(m, "HS10", ::giveUserWeapon, "hs10dw_mp");
+	self addOption(m, "Skorpion", ::giveUserWeapon, "skorpiondw_mp");
+	self addOption(m, "PM63", ::giveUserWeapon, "pm63dw_mp");
+	self addOption(m, "Kiparis", ::giveUserWeapon, "kiparisdw_mp");
+
+	m = "WeaponGlitch";
+	self addOption(m, "ASP", ::giveUserWeapon, "asplh_mp");
+	self addOption(m, "M1911", ::giveUserWeapon, "m1911lh_mp");
+	self addOption(m, "Makarov", ::giveUserWeapon, "makarovlh_mp");
+	self addOption(m, "Python", ::giveUserWeapon, "pythonlh_mp");
+	self addOption(m, "CZ75", ::giveUserWeapon, "cz75lh_mp");
+	self addOption(m, "Syrette", ::giveUserWeapon, "syrette_mp");
+	self addOption(m, "Briefcase Bomb", ::giveUserWeapon, "briefcase_bomb_mp");
+	self addOption(m, "Autoturret", ::giveUserWeapon, "autoturret_mp");
+	self addOption(m, "Default weapon", ::giveUserWeapon, "defaultweapon_mp");
+
 	m = "ClassGrenades";
 	self addOption(m, "Frag", ::giveGrenade, "frag_grenade_mp");
 	self addOption(m, "Semtex", ::giveGrenade, "sticky_grenade_mp");
 	self addOption(m, "Tomahawk", ::giveGrenade, "hatchet_mp");
 
     m = "ClassCamo";
-	self addMenu(m, "CamoOne", "^9Camos Part 1");
-	self addMenu(m, "CamoTwo", "^9Camos Part 2");
+	self addMenu(m, "CamoOne", "^5Camos Part 1");
+	self addMenu(m, "CamoTwo", "^5Camos Part 2");
 	self addOption(m, "Random Camo", ::randomCamo);
     
 	m = "CamoOne";
@@ -300,10 +496,10 @@ buildMenu()
 	self addOption(m, "Toggle Tactical Mask Pro", ::givePlayerPerk, "tacticalMaskPro");
 
 	m = "ClassAttachment";
-	self addMenu(m, "AttachOptic", "^9Optics");
-	self addMenu(m, "AttachMag", "^9Mags");
-	self addMenu(m, "AttachUnderBarrel", "^9Underbarrel");
-	self addMenu(m, "AttachOther", "^9Other");
+	self addMenu(m, "AttachOptic", "^5Optics");
+	self addMenu(m, "AttachMag", "^5Mags");
+	self addMenu(m, "AttachUnderBarrel", "^5Underbarrel");
+	self addMenu(m, "AttachOther", "^5Other");
 	self addOption(m, "Remove all attachments", ::removeAllAttachments);
 
 	m = "AttachOptic";
@@ -358,197 +554,6 @@ buildMenu()
 	self addOption(m, "Flashbang", ::giveUserTacticals, "flash_grenade_mp");
 	self addOption(m, "Concussion", ::giveUserTacticals, "concussion_grenade_mp");
 	self addOption(m, "Decoy", ::giveUserTacticals, "nightingale_mp");
-
-	m = "MainLobby";
-	self addOption(m, "Toggle timer", ::toggleTimer);
-	self addOption(m, "Add bot", ::addDummies);
-	self addOption(m, "Add 1 minute", ::addMinuteToTimer);
-	self addOption(m, "Remove 1 minute", ::removeMinuteFromTimer);
-	self addOption(m, "Timescale Editor", ::initDvarEditor, "timescale");
-
-	self addMenu("main", "MainPlayers", "^9Players Menu");
-	m = "MainPlayers";
-	if (!level.teamBased)
-	{
-		for (p = 0; p < level.players.size; p++)
-		{
-			player = level.players[p];
-			name = player.name;
-			player_name = "player_" + name;
-
-			if (isAlive(player))
-			{
-				self addMenu(m, player_name, name + " (Alive)");
-			}
-			else if (!isAlive(player))
-			{
-				self addMenu(m, player_name, name + " (Dead)");
-			}
-
-			self addOption(player_name, "Teleport player to crosshair", ::teleportToCrosshair, player);
-			self addOption(player_name, "Teleport myself to player", ::teleportSelfTo, player);
-			self addOption(player_name, "Kill Player", ::killPlayer, player);
-			self addOption(player_name, "Freeze Player", ::freezePlayer, player);
-			self addOption(player_name, "Kick Player", ::kickPlayer, player);
-			self addOption(player_name, "Remove Second Chance", ::removeSecondChance, player);
-			self addOption(player_name, "Change Outfit", ::initOutfitEditor, player);
-		}
-	}
-	else if (level.teamBased)
-	{
-		myTeam = self.pers["team"];
-		otherTeam = getOtherTeam(myTeam);
-		
-		self addMenu(m, "PlayerFriendly", "^9Friendly players");
-		self addMenu(m, "PlayerEnemy", "^9Enemy players");
-
-		for (p = 0; p < level.players.size; p++)
-		{
-			player = level.players[p];
-			name = player.name;
-			player_name = "player_" + name;
-
-			if (player.pers["team"] == myTeam)
-			{
-				m = "PlayerFriendly";
-
-				if (isAlive(player))
-				{
-					self addMenu(m, player_name, name + " (Alive)");
-				}
-				else if (!isAlive(player))
-				{
-					self addMenu(m, player_name, name + " (Dead)");
-				}
-			}
-			else if (player.pers["team"] == otherTeam)
-			{
-				m = "PlayerEnemy";
-
-				if (isAlive(player))
-				{
-					self addMenu(m, player_name, name + " (Alive)");
-				}
-				else if (!isAlive(player))
-				{
-					self addMenu(m, player_name, name + " (Dead)");
-				}
-			}
-			
-			self addOption(player_name, "Teleport player to crosshair", ::teleportToCrosshair, player);
-			self addOption(player_name, "Teleport myself to player", ::teleportSelfTo, player);
-			self addOption(player_name, "Kill Player", ::killPlayer, player);
-			self addOption(player_name, "Freeze Player", ::freezePlayer, player);
-			self addOption(player_name, "Revive player", ::revivePlayer, player);
-			self addOption(player_name, "Change Team", ::changePlayerTeam, player);
-			self addOption(player_name, "Remove Second Chance", ::removeSecondChance, player);
-			self addOption(player_name, "Kick Player", ::kickPlayer, player);
-			self addOption(player_name, "Change Outfit", ::initOutfitEditor, player);
-		}
-	}
-}
-
-buildWeaponMenu()
-{
-	m = "ClassWeapon";
-	self addMenu(m, "WeaponPrimary", "^9Primary");
-	self addMenu(m, "WeaponSecondary", "^9Secondary");
-	self addMenu(m, "WeaponDualWield", "^9Dual Wield");
-	self addMenu(m, "WeaponGlitch", "^9Glitch");
-	self addOption(m, "Take Weapon", ::takeUserWeapon);
-	self addOption(m, "Drop Weapon", ::dropUserWeapon);
-	
-	m = "WeaponPrimary";
-	self addMenu(m, "PrimarySMG", "^9SMG");
-	self addMenu(m, "PrimaryAssault", "^9Assault");
-	self addMenu(m, "PrimaryShotgun", "^9Shotgun");
-	self addMenu(m, "PrimaryLMG", "^9LMG");
-	self addMenu(m, "PrimarySniper", "^9Sniper");
-	
-	m = "PrimarySMG";
-	self addOption(m, "MP5K", ::giveUserWeapon, "mp5k_mp");
-	self addOption(m, "Skorpion", ::giveUserWeapon, "skorpion_mp");
-	self addOption(m, "MAC11", ::giveUserWeapon, "mac11_mp");
-	self addOption(m, "AK74u", ::giveUserWeapon, "ak74u_mp");
-	self addOption(m, "UZI", ::giveUserWeapon, "uzi_mp");
-	self addOption(m, "PM63", ::giveUserWeapon, "pm63_mp");
-	self addOption(m, "MPL", ::giveUserWeapon, "mpl_mp");
-	self addOption(m, "Spectre", ::giveUserWeapon, "spectre_mp");
-	self addOption(m, "Kiparis", ::giveUserWeapon, "kiparis_mp");
-	
-	m = "PrimaryAssault";
-	self addOption(m, "M16", ::giveUserWeapon, "m16_mp");
-	self addOption(m, "Enfield", ::giveUserWeapon, "enfield_mp");
-	self addOption(m, "M14", ::giveUserWeapon, "m14_mp");
-	self addOption(m, "Famas", ::giveUserWeapon, "famas_mp");
-	self addOption(m, "Galil", ::giveUserWeapon, "galil_mp");
-	self addOption(m, "AUG", ::giveUserWeapon, "aug_mp");
-	self addOption(m, "FN FAL", ::giveUserWeapon, "fnfal_mp");
-	self addOption(m, "AK47", ::giveUserWeapon, "ak47_mp");
-	self addOption(m, "Commando", ::giveUserWeapon, "commando_mp");
-	self addOption(m, "G11", ::giveUserWeapon, "g11_mp");
-	
-	m = "PrimaryShotgun";
-	self addOption(m, "Olympia", ::giveUserWeapon, "rottweil72_mp");
-	self addOption(m, "Stakeout", ::giveUserWeapon, "ithaca_grip_mp");
-	self addOption(m, "SPAS-12", ::giveUserWeapon, "spas_mp");
-	self addOption(m, "HS10", ::giveUserWeapon, "hs10_mp");
-	
-	m = "PrimaryLMG";
-	self addOption(m, "HK21", ::giveUserWeapon, "hk21_mp");
-	self addOption(m, "RPK", ::giveUserWeapon, "rpk_mp");
-	self addOption(m, "M60", ::giveUserWeapon, "m60_mp");
-	self addOption(m, "Stoner63", ::giveUserWeapon, "stoner63_mp");
-	
-	m = "PrimarySniper";
-	self addOption(m, "Dragunov", ::giveUserWeapon, "dragunov_mp");
-	self addOption(m, "WA2000", ::giveUserWeapon, "wa2000_mp");
-	self addOption(m, "L96A1", ::giveUserWeapon, "l96a1_mp");
-	self addOption(m, "PSG1", ::giveUserWeapon, "psg1_mp");
-	
-	m = "WeaponSecondary";
-	self addMenu(m, "SecondaryPistol", "^9Pistol");
-	self addMenu(m, "SecondaryLauncher", "^9Launcher");
-	self addMenu(m, "SecondarySpecial", "^9Special");
-	
-	m = "SecondaryPistol";
-	self addOption(m, "ASP", ::giveUserWeapon, "asp_mp");
-	self addOption(m, "M1911", ::giveUserWeapon, "m1911_mp");
-	self addOption(m, "Makarov", ::giveUserWeapon, "makarov_mp");
-	self addOption(m, "Python", ::giveUserWeapon, "python_mp");
-	self addOption(m, "CZ75", ::giveUserWeapon, "cz75_mp");
-	
-	m = "SecondaryLauncher";
-	self addOption(m, "M72 LAW", ::giveUserWeapon, "m72_law_mp");
-	self addOption(m, "RPG", ::giveUserWeapon, "rpg_mp");
-	self addOption(m, "Strela-3", ::giveUserWeapon, "strela_mp");
-	self addOption(m, "China Lake", ::giveUserWeapon, "china_lake_mp");
-	
-	m = "SecondarySpecial";
-	self addOption(m, "Ballistic Knife", ::giveUserWeapon, "knife_ballistic_mp");
-	self addOption(m, "Crossbow", ::giveUserWeapon, "crossbow_explosive_mp");
-	
-	m = "WeaponDualWield";
-	self addOption(m, "ASP", ::giveUserWeapon, "aspdw_mp");
-	self addOption(m, "Makarov", ::giveUserWeapon, "makarovdw_mp");
-	self addOption(m, "M1911", ::giveUserWeapon, "m1911dw_mp");
-	self addOption(m, "Python", ::giveUserWeapon, "pythondw_mp");
-	self addOption(m, "CZ75", ::giveUserWeapon, "cz75dw_mp");
-	self addOption(m, "HS10", ::giveUserWeapon, "hs10dw_mp");
-	self addOption(m, "Skorpion", ::giveUserWeapon, "skorpiondw_mp");
-	self addOption(m, "PM63", ::giveUserWeapon, "pm63dw_mp");
-	self addOption(m, "Kiparis", ::giveUserWeapon, "kiparisdw_mp");
-
-	m = "WeaponGlitch";
-	self addOption(m, "ASP", ::giveUserWeapon, "asplh_mp");
-	self addOption(m, "M1911", ::giveUserWeapon, "m1911lh_mp");
-	self addOption(m, "Makarov", ::giveUserWeapon, "makarovlh_mp");
-	self addOption(m, "Python", ::giveUserWeapon, "pythonlh_mp");
-	self addOption(m, "CZ75", ::giveUserWeapon, "cz75lh_mp");
-	self addOption(m, "Syrette", ::giveUserWeapon, "syrette_mp");
-	self addOption(m, "Briefcase Bomb", ::giveUserWeapon, "briefcase_bomb_mp");
-	self addOption(m, "Autoturret", ::giveUserWeapon, "autoturret_mp");
-	self addOption(m, "Default weapon", ::giveUserWeapon, "defaultweapon_mp");
 }
 
 /*MENU FUNCTIONS*/
@@ -703,7 +708,7 @@ scroll(number)
 
 moveScrollbar()
 {
-	self.menuScrollbar1.y = self.yAxis + (self.currentMenuPosition * 15);
+	self.menuScrollbar1.y = level.yAxis + (self.currentMenuPosition * 15);
 }
 
 addMenu(parent, name, title)
@@ -776,28 +781,45 @@ drawMenu(currentMenu)
 
 drawShaders()
 {
-	self.menuBackground = createRectangle("CENTER", "CENTER", -250, 0, 200, 250, 1, "black");
-	self.menuBackground setColor(0, 0, 0, 1);
-	self.menuScrollbar1 = createRectangle("CENTER", "TOP", -250, self.yAxis + (15 * self.currentMenuPosition), 200, 35, 2, "score_bar_bg");
-	self.menuScrollbar1 setColor(1, 1, 1, 1);
-
+	self.menuBackground = createRectangle("CENTER", "CENTER", level.xAxis, 0, 200, 250, 1, "black");
+	self.menuBackground setColor(0, 0, 0, 0.5);
+	self.menuScrollbar1 = createRectangle("CENTER", "TOP", level.xAxis, level.yAxis + (15 * self.currentMenuPosition), 200, 35, 2, "score_bar_bg");
+	self.menuScrollbar1 setColor(0.08, 0.78, 0.83, 1);
+	self.dividerBar = createRectangle("CENTER", "TOP", level.xAxis, level.yAxis - 20, 200, 1, 2, "white");
+	self.dividerBar setColor(0.08, 0.78, 0.83, 1);
+	self.menuBorderTop = createRectangle("CENTER", "TOP", level.xAxis, level.yAxisMenuBorder - 85, 201, 1, 2, "white");
+	self.menuBorderTop setColor(0.08, 0.78, 0.83, 1);
+	self.menuBorderBottom = createRectangle("CENTER", "TOP", level.xAxis, level.yAxisMenuBorder + 165, 201, 1, 2, "white");
+	self.menuBorderBottom setColor(0.08, 0.78, 0.83, 1);
+	self.menuBorderLeft = createRectangle("CENTER", "TOP", level.xAxis + 100, level.yAxisMenuBorder + 40, 1, 251, 2, "white");
+	self.menuBorderLeft setColor(0.08, 0.78, 0.83, 1);
+	self.menuBorderRight = createRectangle("CENTER", "TOP", level.xAxis - 100, level.yAxisMenuBorder + 40, 1, 251, 2, "white");
+	self.menuBorderRight setColor(0.08, 0.78, 0.83, 1);
+	self.controlsBackground = createRectangle("LEFT", "TOP", -310, level.yAxisControlsBackground, 197, 25, 1, "black");
+	self.controlsBackground setColor(0, 0, 0, 0.5);
+	self.controlsBorderBottom = createRectangle("LEFT", "TOP", -311, level.yAxisControlsBackground + 13, 199, 1, 2, "white");
+	self.controlsBorderBottom setColor(0.08, 0.78, 0.83, 1);
+	self.controlsBorderLeft = createRectangle("LEFT", "TOP", -311, level.yAxisControlsBackground, 1, 26, 2, "white");
+	self.controlsBorderLeft setColor(0.08, 0.78, 0.83, 1);
+	self.controlsBorderMiddle = createRectangle("LEFT", "TOP", -113, level.yAxisControlsBackground, 1, 26, 2, "white");
+	self.controlsBorderMiddle setColor(0.08, 0.78, 0.83, 1);
 	self.shadersDrawn = true;
 }
 
 drawText()
 {
-	self.menuTitle = self createText("objective", 1.3, "CENTER", "TOP", -250, self.yAxis - 50, 3, "");
+	self.menuTitle = self createText("default", 1.3, "CENTER", "TOP", level.xAxis, level.yAxis - 50, 3, "");
 	self.menuTitle setColor(1, 1, 1, 1);
-	self.twitterTitle = self createText("small", 1, "CENTER", "TOP", -250, self.yAxis - 35, 3, "");
+	self.twitterTitle = self createText("small", 1, "CENTER", "TOP", level.xAxis, level.yAxis - 35, 3, "");
 	self.twitterTitle setColor(1, 1, 1, 1);
-
+	self.controlsText = self createText("small", 1, "LEFT", "TOP", -300, level.yAxisControlsBackground + 3, 3, "");
+	self.controlsText setColor(1, 1, 1, 1);
 	for (i = 0; i < 11; i++)
 	{
-		self.menuOptions[i] = self createText("objective", 1, "CENTER", "TOP", -250, self.yAxis + (15 * i), 3, "");
+		self.menuOptions[i] = self createText("objective", 1, "CENTER", "TOP", level.xAxis, level.yAxis + (15 * i), 3, "");
 	}
 
 	self.textDrawn = true;
-	
 	self updateText();
 }
 
@@ -810,8 +832,8 @@ elemFade(time, alpha)
 updateText()
 {
 	currentMenu = self getCurrentMenu();
-	
 	self.menuTitle setText(self.menus[self.currentMenu].title);
+	self.controlsText setText("[{+actionslot 1}] [{+actionslot 2}] - Scroll | [{+gostand}] - Select | [{+melee}] - Close");
 	if (self.menus[self.currentMenu].title == level.menuName)
 	{
 		self.twitterTitle setText("@Centuryy_");
@@ -824,7 +846,6 @@ updateText()
 	for (i = 0; i < self.menuOptions.size; i++)
 	{
 		optionString = "";
-
 		if (isDefined(self.menus[self.currentMenu].options[i]))
 		{
 			optionString = self.menus[self.currentMenu].options[i].label;
@@ -843,9 +864,17 @@ destroyMenu()
 destroyShaders()
 {
 	self.menuBackground destroy();
+	self.dividerBar destroy();
+	self.controlsBackground destroy();
+	self.menuBorderTop destroy();
+	self.menuBorderBottom destroy();
+	self.menuBorderLeft destroy();
+	self.menuBorderRight destroy();
+	self.controlsBorderBottom destroy();
+	self.controlsBorderLeft destroy();
+	self.controlsBorderMiddle destroy();
 	self.menuTitleDivider destroy();
 	self.menuScrollbar1 destroy();
-	
 	self.shadersDrawn = false;
 }
 
@@ -853,6 +882,7 @@ destroyText()
 {
 	self.menuTitle destroy();
 	self.twitterTitle destroy();
+	self.controlsText destroy();
 	for (o = 0; o < self.menuOptions.size; o++)
 	{
 		self.menuOptions[o] destroy();
@@ -1554,26 +1584,6 @@ removeSecondChance(player)
 		self UnSetPerk("specialty_pistoldeath");
 		self UnSetPerk("specialty_finalstand");
 		self iprintln("Second Chance Pro ^2removed from " + player.name);
-	}
-}
-
-testFunc()
-{
-	self endon("disconnect");
-
-	for (;;)
-	{
-		if (self ButtonPressed("button_b"))
-		{
-			self iprintln("b");
-		}
-
-		wait 0.05;
-		/*
-		level waittill("menu_button_pressed", keystring);
-		self iprintln("key");
-		self iprintln(keystring);
-		*/
 	}
 }
 
